@@ -1,0 +1,783 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SIMPLE — Slider parallax demo</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Geologica:wght@200;300;400;500;900&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bh: clamp(300px, 72vh, 760px);   /* bottle height: everything scales from this */
+    --ink:#fff;
+    --pad: clamp(20px, 6vw, 96px);
+    --edge: max(14px, calc(clamp(24px,10vh,96px) - 44px));   /* bottom of the bottle meter == bottom of the arrow buttons */
+    --mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html{scroll-behavior:auto}
+  body{font-family:"Geologica",system-ui,sans-serif;background:#222;color:var(--ink);-webkit-font-smoothing:antialiased}
+  /* scroll track: 100vh per slide */
+  .track{height:calc(var(--n) * 100vh)}
+  .stage{position:sticky;top:0;height:100vh;overflow:hidden;background:var(--bg,#3a4f23);transition:none}
+  .slide{position:absolute;inset:0;opacity:0;pointer-events:none;will-change:opacity}
+  .slide.on{pointer-events:auto}
+
+  /* ---------- scene: all layers positioned from the bottle height ---------- */
+  .scene{position:absolute;left:50%;top:50%;width:calc(var(--bh)*.29);height:var(--bh);transform:translate(-50%,-50%)}
+  @media (min-width:801px){ .scene{top:auto;bottom:clamp(24px,10vh,96px);transform:translateX(-50%)} }  /* bottle base sits level with the nav buttons */
+  .layer{position:absolute;will-change:transform}
+  .arch{left:50%;top:calc(var(--bh)*.048);width:calc(var(--bh)*.645);height:calc(var(--bh)*.871);margin-left:calc(var(--bh)*-.3225);
+        border-radius:999px 999px 0 0;background-size:cover;background-position:center}
+  /* THE WORD — in front of the arch, behind the bottle */
+  /* the word is a window onto the photo: the image is masked by the letterforms and drifts inside them */
+  .word{left:50%;width:0;transform-origin:50% 50%;white-space:nowrap;font-weight:900;line-height:1;letter-spacing:-.012em}
+  .word span{display:block;width:max-content;transform:translateX(-50%);color:transparent;-webkit-text-fill-color:transparent;
+             -webkit-background-clip:text;background-clip:text;background-repeat:no-repeat;background-size:100% auto;background-position:50% 50%}
+  .shadow{left:calc(var(--bh)*-.8224);top:calc(var(--bh)*.7796);width:calc(var(--bh)*.954);height:calc(var(--bh)*.2314);
+          background:url(img/floor-shadow.png) center/100% 100% no-repeat}
+  .bottle{background-size:contain;background-repeat:no-repeat;background-position:center}
+
+  /* ---------- chrome / copy ---------- */
+  .eyebrow,.counter{position:absolute;top:clamp(20px,6vh,56px);font:11px/1 var(--mono);letter-spacing:.14em;text-transform:uppercase;color:var(--tc)}
+  .eyebrow{left:var(--pad)} .counter{right:var(--pad)}
+  .copy{position:absolute;left:var(--pad);bottom:clamp(24px,10vh,96px);width:min(320px,40vw);color:var(--tc);will-change:transform,opacity}
+  .copy h2{font-weight:300;font-size:clamp(28px,3.2vw,44px);letter-spacing:-.04em;margin-bottom:16px}
+  .copy p{font-size:14px;line-height:1.6;margin-bottom:24px}
+  .btn{display:inline-block;background:var(--tc);color:var(--bg);border-radius:8px;padding:12px 20px;font-size:14px;font-weight:500;text-decoration:none}
+  .calls{position:absolute;right:var(--pad);bottom:calc(var(--edge) + 76px);width:min(280px,24vw);color:var(--tc);will-change:transform,opacity}
+  .calls div{display:flex;gap:20px;padding:18px 0;border-top:1px solid color-mix(in srgb,var(--tc) 40%,transparent);font-size:15px}
+  .calls div:first-child{border-top:1px solid color-mix(in srgb,var(--tc) 55%,transparent)}
+  .calls b{font:400 12px/1.5 var(--mono)}
+  .nav{position:absolute;right:var(--pad);bottom:var(--edge);display:flex;gap:16px;z-index:5}
+  .nav button{width:56px;height:56px;border-radius:50%;border:1px solid var(--tc);background:transparent;color:var(--tc);font-size:20px;cursor:pointer}
+  .nav button:hover{background:color-mix(in srgb,var(--tc) 14%,transparent)}
+  .hint{position:absolute;left:50%;bottom:20px;transform:translateX(-50%);font:10px/1 var(--mono);letter-spacing:.2em;color:var(--tc)}
+  .dots{position:absolute;left:50%;top:clamp(20px,6vh,56px);transform:translateX(-50%);display:flex;gap:8px;z-index:5}
+  .dots i{width:7px;height:7px;border-radius:50%;background:var(--tc);opacity:.3;cursor:pointer;transition:opacity .3s}
+  .dots i.on{opacity:1}
+
+  /* ---------- mobile ---------- */
+
+
+  /* ---------- category meter: one bottle outline per drink in the current category; the active one fills like liquid ---------- */
+  .dots{display:none}
+  .meter{position:absolute;left:var(--pad);bottom:var(--edge);display:flex;align-items:flex-end;gap:10px;z-index:5;color:var(--tc)}
+  .meter .bt{position:relative;width:14px;height:30px;padding:0;border:0;background:none;cursor:pointer;color:inherit}
+  .meter .bt svg{position:absolute;inset:0;width:100%;height:100%;overflow:visible}
+  .meter .bt .out path{fill:none;stroke:currentColor;stroke-width:1.2;transition:opacity .4s}
+  .meter .bt .liq{clip-path:inset(100% 0 0 0);transition:clip-path .8s cubic-bezier(.22,.8,.3,1)}
+  .meter .bt .liq path{fill:currentColor}
+  .meter .bt.on .liq{clip-path:inset(0 0 0 0)}
+  .meter .bt.on .out path,.meter .bt:hover .out path{opacity:1}
+  .meter .lab{margin-left:8px;font:11px/1 var(--mono);letter-spacing:.14em;text-transform:uppercase;align-self:center}
+  /* ---------- category pills: liquid-fill hover ---------- */
+  .pills{position:absolute;top:clamp(14px,4.4vh,44px);left:50%;transform:translateX(-50%);display:flex;gap:8px;z-index:6}
+  .pill{flex:0 0 auto}
+  .pill{position:relative;overflow:hidden;isolation:isolate;cursor:pointer;border-radius:999px;padding:10px 16px;white-space:nowrap;
+        border:1px solid color-mix(in srgb,var(--tc) 40%,transparent);background:transparent;
+        color:var(--tc);font:11px/14px var(--mono);letter-spacing:.08em;text-transform:uppercase}
+  .pill .lbl{position:relative;z-index:1}
+  .pill .fill{position:absolute;inset:0;z-index:2;pointer-events:none;transform:translateY(calc(100% + 12px));transition:transform .75s cubic-bezier(.22,.8,.3,1)}
+  .pill .body{position:absolute;inset:0;background:var(--tc);overflow:hidden}
+  .pill .wave{position:absolute;left:0;top:-8px;width:200%;height:9px;color:var(--tc);animation:wave 1.4s linear infinite}
+  .pill .wave path{fill:currentColor}
+  /* knockout label: sits inside the fill, counter-moves so it never shifts; shows the slide colour through the liquid */
+  .pill .lbl2{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:var(--bg);
+              transform:translateY(calc(-100% - 12px));transition:transform .75s cubic-bezier(.22,.8,.3,1)}
+  .pill:hover .fill{transform:translateY(0)}
+  .pill:hover .lbl2{transform:translateY(0)}
+  /* a category pill fills for a moment when it becomes the active one, like a rollover */
+  .pill.pulse .fill{transform:translateY(0)}
+  .pill.pulse .lbl2{transform:translateY(0)}
+  /* active category: heavier outline + dot, all in the slide colour (no fill) */
+  .pill:focus-visible{outline:2px solid var(--tc);outline-offset:3px}
+  /* while navigating by keyboard, a resting mouse pointer must not leave a pill filled */
+  body.kb .pill:hover .fill{transform:translateY(calc(100% + 12px))}
+  body.kb .pill:hover .lbl2{transform:translateY(calc(-100% - 12px))}
+  .pill.on{border-width:2px;padding:9px 15px}
+  .pill.on .lbl::before,.pill.on .lbl2::before{content:'';display:inline-block;width:6px;height:6px;border-radius:50%;background:currentColor;margin-right:8px;vertical-align:middle}
+  .pill.off{opacity:.38;cursor:default}
+  .pill.off .fill{display:none}
+  @keyframes wave{to{transform:translateX(-50%)}}
+  @media (max-width:800px){
+    :root{--bh: clamp(260px, 50vh, 460px)}
+    .scene{top:42%}
+    .calls{display:none}
+    .copy{width:calc(100% - var(--pad)*2);bottom:clamp(88px,14vh,120px)}
+    .copy p{display:none}
+    .copy h2{font-size:30px;margin-bottom:14px}
+    .nav{left:var(--pad);right:var(--pad);bottom:24px;justify-content:space-between}
+    .nav button{width:48px;height:48px}
+    .meter{left:50%;transform:translateX(-50%);bottom:24px}
+    .pills{left:0;right:0;transform:none;overflow-x:auto;padding:0 var(--pad);top:64px;scrollbar-width:none}
+    .eyebrow,.counter{display:none}
+    .hint{display:none}
+  }
+  @media (prefers-reduced-motion: reduce){
+    .layer,.copy,.calls{transform:none!important}
+    .pill .wave{animation:none}
+  }
+</style>
+</head>
+<body>
+<main class="track" id="track">
+  <section class="stage" id="stage" aria-label="Product slider">
+    <div class="pills" id="pills" role="tablist" aria-label="Jump to category"></div>
+    <div class="dots" id="dots"></div>
+    <div class="meter" id="meter" aria-label="Drinks in this category"></div>
+    <div class="nav"><button id="prev" aria-label="Previous">←</button><button id="next" aria-label="Next">→</button></div>
+    <div class="hint" id="hint">SCROLL ↓ · MOVE YOUR MOUSE</div>
+  </section>
+</main>
+
+<script>
+/* ------------------------------------------------------------------
+   SIMPLE slider parallax demo
+   - Scroll drives slide changes (100vh per slide) + layer speeds
+   - Pointer adds a little depth on desktop
+   - Only transform + opacity are animated
+   - Word sits IN FRONT of the arch, BEHIND the bottle
+   ------------------------------------------------------------------ */
+const SLIDES = [
+ {
+  "key": "daily",
+  "grp": "juices",
+  "word": "DAILY",
+  "name": "Daily Greens",
+  "cat": "Juices · Greens",
+  "bg": "#3a4f23",
+  "tc": "#fff",
+  "copy": "You probably need more greens, but you don't need a lecture. Drink this every day.",
+  "calls": [
+   "From plants",
+   "12 fl oz",
+   "Refrigerated · Local delivery"
+  ],
+  "b": [
+   0.0,
+   0.0,
+   0.2903,
+   1.0
+  ],
+  "s": [
+   -0.8205,
+   0.7797,
+   0.9532,
+   0.2306
+  ]
+ },
+ {
+  "key": "vital",
+  "grp": "juices",
+  "word": "VITAL",
+  "name": "Vital Reds",
+  "cat": "Juices · Reds",
+  "bg": "#942b38",
+  "tc": "#fff",
+  "copy": "Support from the inside out. Drink it like you mean it.",
+  "calls": [
+   "From plants",
+   "12 fl oz",
+   "Refrigerated · Local delivery"
+  ],
+  "b": [
+   0.0,
+   0.0,
+   0.2903,
+   1.0
+  ],
+  "s": [
+   -0.8205,
+   0.7797,
+   0.9532,
+   0.2306
+  ]
+ },
+ {
+  "key": "juicy",
+  "grp": "juices",
+  "word": "JUICY",
+  "name": "Juicy Berries",
+  "cat": "Juices · Berries",
+  "bg": "#532261",
+  "tc": "#fff",
+  "copy": "Good choices don't have to be boring. This is proof.",
+  "calls": [
+   "From plants",
+   "12 fl oz",
+   "Refrigerated · Local delivery"
+  ],
+  "b": [
+   0.0,
+   0.0,
+   0.2903,
+   1.0
+  ],
+  "s": [
+   -0.8205,
+   0.7797,
+   0.9532,
+   0.2306
+  ]
+ },
+ {
+  "key": "shine",
+  "grp": "juices",
+  "word": "SHINE",
+  "name": "Shine Oranges",
+  "cat": "Juices · Oranges",
+  "bg": "#bb5812",
+  "tc": "#fff",
+  "copy": "A little sunshine in a bottle. Drink it and keep going.",
+  "calls": [
+   "From plants",
+   "12 fl oz",
+   "Refrigerated · Local delivery"
+  ],
+  "b": [
+   0.0,
+   0.0,
+   0.2903,
+   1.0
+  ],
+  "s": [
+   -0.8205,
+   0.7797,
+   0.9532,
+   0.2306
+  ]
+ },
+ {
+  "key": "detox",
+  "grp": "juices",
+  "word": "DETOX",
+  "name": "Detox Blues",
+  "cat": "Juices · Blues",
+  "bg": "#24968f",
+  "tc": "#1a1a17",
+  "copy": "Help your body clean up a little. Don't overthink it.",
+  "calls": [
+   "From algae",
+   "12 fl oz",
+   "Refrigerated · Local delivery"
+  ],
+  "b": [
+   0.0,
+   0.0,
+   0.2903,
+   1.0
+  ],
+  "s": [
+   -0.8205,
+   0.7797,
+   0.9532,
+   0.2306
+  ]
+ },
+ {
+  "key": "focus",
+  "grp": "cm",
+  "word": "FOCUS",
+  "name": "Ceremonial Matcha",
+  "cat": "Coffee & Matcha",
+  "bg": "#a9b88f",
+  "tc": "#1a1a17",
+  "copy": "You don't need more caffeine. You need better caffeine.",
+  "calls": [
+   "Ceremonial matcha",
+   "Refrigerated",
+   "Local delivery"
+  ],
+  "b": [
+   0.0,
+   0.0,
+   0.2903,
+   1.0
+  ],
+  "s": [
+   -0.8205,
+   0.7797,
+   0.9532,
+   0.2306
+  ]
+ },
+ {
+  "key": "grind",
+  "grp": "cm",
+  "word": "GRIND",
+  "name": "Espresso",
+  "cat": "Coffee & Matcha",
+  "bg": "#543421",
+  "tc": "#fff",
+  "copy": "Nothing to prove, but you'll keep trying. This helps.",
+  "calls": [
+   "Espresso · Coffee #1",
+   "Refrigerated",
+   "Local delivery"
+  ],
+  "b": [
+   0.0242,
+   0.0581,
+   0.2742,
+   0.9419
+  ],
+  "s": [
+   -0.7479,
+   0.7924,
+   0.8984,
+   0.2177
+  ]
+ },
+ {
+  "key": "vanilla",
+  "grp": "protein",
+  "word": "BUILD",
+  "name": "Vanilla Protein",
+  "cat": "Protein",
+  "bg": "#d2beb3",
+  "tc": "#1a1a17",
+  "copy": "Crafted with real ingredients and nothing extra. No fillers, no artificial flavors. After a workout, simplified.",
+  "calls": [
+   "Vanilla",
+   "Protein shake",
+   "Refrigerated · Local delivery"
+  ],
+  "b": [
+   -0.0016,
+   0.0,
+   0.2935,
+   1.0
+  ],
+  "s": [
+   -0.8189,
+   0.7797,
+   0.9532,
+   0.2306
+  ]
+ },
+ {
+  "key": "choc",
+  "grp": "protein",
+  "word": "BUILD",
+  "name": "Chocolate Protein",
+  "cat": "Protein",
+  "bg": "#b89b8a",
+  "tc": "#1a1a17",
+  "copy": "Crafted with real ingredients and nothing extra. No fillers, no artificial flavors. After a workout, simplified.",
+  "calls": [
+   "Chocolate",
+   "Protein shake",
+   "Refrigerated · Local delivery"
+  ],
+  "b": [
+   -0.0016,
+   0.0,
+   0.2935,
+   1.0
+  ],
+  "s": [
+   -0.8189,
+   0.7797,
+   0.9532,
+   0.2306
+  ]
+ },
+ {
+  "key": "strawberry",
+  "grp": "protein",
+  "word": "BUILD",
+  "name": "Strawberry Protein",
+  "cat": "Protein",
+  "bg": "#e2b6c3",
+  "tc": "#1a1a17",
+  "copy": "Crafted with real ingredients and nothing extra. No fillers, no artificial flavors. After a workout, simplified.",
+  "calls": [
+   "Strawberry",
+   "Protein shake",
+   "Refrigerated · Local delivery"
+  ],
+  "b": [
+   -0.0016,
+   0.0,
+   0.2935,
+   1.0
+  ],
+  "s": [
+   -0.8189,
+   0.7797,
+   0.9532,
+   0.2306
+  ]
+ },
+ {
+  "key": "spice",
+  "grp": "tea",
+  "word": "SPICE",
+  "name": "Warm + Restore Tea",
+  "cat": "Unwind · Tea",
+  "bg": "#b15e3d",
+  "tc": "#fff",
+  "copy": "Some things are better left at the bottom of the cup. Assam black tea, cinnamon, clove and cardamom.",
+  "calls": [
+   "Loose leaf tea",
+   "Pairs with its bath soak",
+   "Ships nationwide"
+  ],
+  "b": [
+   -0.0565,
+   0.2452,
+   0.4032,
+   0.7742
+  ],
+  "s": [
+   -0.5132,
+   0.8487,
+   0.7387,
+   0.179
+  ]
+ },
+ {
+  "key": "quiet",
+  "grp": "tea",
+  "word": "QUIET",
+  "name": "Calm + Unwind Tea",
+  "cat": "Unwind · Tea",
+  "bg": "#97a47f",
+  "tc": "#1a1a17",
+  "copy": "Put yourself on do not disturb. Green tea, lemon balm and peppermint.",
+  "calls": [
+   "Loose leaf tea",
+   "Pairs with its bath soak",
+   "Ships nationwide"
+  ],
+  "b": [
+   -0.0565,
+   0.2452,
+   0.4032,
+   0.7742
+  ],
+  "s": [
+   -0.5132,
+   0.8487,
+   0.7387,
+   0.179
+  ]
+ },
+ {
+  "key": "dream",
+  "grp": "tea",
+  "word": "DREAM",
+  "name": "Soothe + Sleep Tea",
+  "cat": "Unwind · Tea",
+  "bg": "#a397b2",
+  "tc": "#1a1a17",
+  "copy": "Soak now, solve later. Decaffeinated white tea, lavender and chamomile.",
+  "calls": [
+   "Loose leaf tea",
+   "Pairs with its bath soak",
+   "Ships nationwide"
+  ],
+  "b": [
+   -0.0565,
+   0.2452,
+   0.4032,
+   0.7742
+  ],
+  "s": [
+   -0.5132,
+   0.8487,
+   0.7387,
+   0.179
+  ]
+ },
+ {
+  "key": "melon",
+  "grp": "lemonades",
+  "word": "MELON",
+  "name": "Watermelon Sicilian Lemonade",
+  "cat": "Sicilian Lemonades",
+  "bg": "#e9777f",
+  "tc": "#1a1a17",
+  "copy": "Summer, squeezed. A watermelon take on Sicilian lemonade.",
+  "calls": [
+   "Sicilian lemonade",
+   "12 fl oz",
+   "Watermelon"
+  ],
+  "b": [
+   0.0,
+   0.0,
+   0.2903,
+   1.0
+  ],
+  "s": [
+   -0.8205,
+   0.7797,
+   0.9532,
+   0.2306
+  ]
+ },
+ {
+  "key": "zesty",
+  "grp": "lemonades",
+  "word": "ZESTY",
+  "name": "Sicilian Lemonade",
+  "cat": "Sicilian Lemonades",
+  "bg": "#e8cb5a",
+  "tc": "#1a1a17",
+  "copy": "Sunshine, squeezed. Classic Sicilian lemonade.",
+  "calls": [
+   "Sicilian lemonade",
+   "12 fl oz",
+   "Classic"
+  ],
+  "b": [
+   0.0,
+   0.0,
+   0.2903,
+   1.0
+  ],
+  "s": [
+   -0.8205,
+   0.7797,
+   0.9532,
+   0.2306
+  ]
+ },
+ {
+  "key": "rabbit",
+  "grp": "energy",
+  "word": "BOUND",
+  "name": "The Black Rabbit",
+  "cat": "Energy · Black Rabbit",
+  "bg": "#6bb5df",
+  "tc": "#1a1a17",
+  "copy": "A surge of vitality for anyone chasing the unknown. Natural caffeine, beta-alanine, L-theanine and a three-mushroom adaptogen brew.",
+  "calls": [
+   "Black Rabbit Energy",
+   "12 fl oz",
+   "Blue Raspberry Lemonade"
+  ],
+  "b": [
+   0.0,
+   0.0,
+   0.2903,
+   1.0
+  ],
+  "s": [
+   -0.8205,
+   0.7797,
+   0.9532,
+   0.2306
+  ]
+ },
+ {
+  "key": "darkside",
+  "grp": "energy",
+  "word": "SHADE",
+  "name": "Darkside",
+  "cat": "Energy · Black Rabbit",
+  "bg": "#bc555b",
+  "tc": "#fff",
+  "copy": "Energy for the thrill of the unknown. L-theanine, L-citrulline, panax ginseng, maca, NMN, cordyceps, ashwagandha and damiana.",
+  "calls": [
+   "Black Rabbit Energy",
+   "12 fl oz",
+   "Red Raspberry Lemonade"
+  ],
+  "b": [
+   0.0,
+   0.0,
+   0.2903,
+   1.0
+  ],
+  "s": [
+   -0.8205,
+   0.7797,
+   0.9532,
+   0.2306
+  ]
+ },
+ {
+  "key": "midnight",
+  "grp": "energy",
+  "word": "NIGHT",
+  "name": "Midnight",
+  "cat": "Energy · Black Rabbit",
+  "bg": "#8a5a96",
+  "tc": "#fff",
+  "copy": "When the clock strikes twelve, the night shift starts. L-citrulline, panax ginseng, natural caffeine, damiana, muira puama and adaptogens.",
+  "calls": [
+   "Black Rabbit Energy",
+   "12 fl oz",
+   "Juicy Grape"
+  ],
+  "b": [
+   0.0,
+   0.0,
+   0.2903,
+   1.0
+  ],
+  "s": [
+   -0.8205,
+   0.7797,
+   0.9532,
+   0.2306
+  ]
+ },
+ {
+  "key": "nether",
+  "grp": "energy",
+  "word": "BLAZE",
+  "name": "The Nether",
+  "cat": "Energy · Black Rabbit",
+  "bg": "#ea8a5e",
+  "tc": "#1a1a17",
+  "copy": "Dive into a blazing inferno of flavor. Beta-alanine, L-citrulline, natural caffeine, L-arginine, lion's mane and chaga.",
+  "calls": [
+   "Black Rabbit Energy",
+   "12 fl oz",
+   "Orange Twist"
+  ],
+  "b": [
+   0.0,
+   0.0,
+   0.2903,
+   1.0
+  ],
+  "s": [
+   -0.8205,
+   0.7797,
+   0.9532,
+   0.2306
+  ]
+ }
+];
+const N = SLIDES.length;
+document.documentElement.style.setProperty('--n', N);
+const stage = document.getElementById('stage');
+const dots = document.getElementById('dots');
+const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+const els = SLIDES.map((s,i)=>{
+  const el = document.createElement('div'); el.className='slide'; el.style.setProperty('--tc', s.tc);
+  el.innerHTML = `
+    <div class="eyebrow" data-l="eyebrow">SIMPLE — ${s.cat}</div>
+    <div class="counter" data-l="counter">${String(i+1).padStart(2,'0')} / ${String(N).padStart(2,'0')}</div>
+    <div class="scene">
+      <div class="layer word"   data-l="word"><span style="background-image:url(img/arch-${s.key}.jpg)">${s.word}</span></div>
+      <div class="layer shadow" data-l="shadow" style="left:calc(var(--bh)*${s.s[0]});top:calc(var(--bh)*${s.s[1]});width:calc(var(--bh)*${s.s[2]});height:calc(var(--bh)*${s.s[3]})"></div>
+      <div class="layer bottle" data-l="bottle" style="background-image:url(img/bottle-${s.key}.png);left:calc(var(--bh)*${s.b[0]});top:calc(var(--bh)*${s.b[1]});width:calc(var(--bh)*${s.b[2]});height:calc(var(--bh)*${s.b[3]})"></div>
+    </div>
+    <div class="copy" data-l="copy"><h2>${s.name}</h2><p>${s.copy}</p><a class="btn" href="#">Shop ${s.name}</a></div>
+    <div class="calls" data-l="calls">${s.calls.map((c,k)=>`<div><b>0${k+1}</b><span>${c}</span></div>`).join('')}</div>`;
+  stage.insertBefore(el, dots);
+  const d = document.createElement('i'); d.onclick=()=>go(i); dots.appendChild(d);
+  return {el, layers:Object.fromEntries([...el.querySelectorAll('[data-l]')].map(n=>[n.dataset.l,n]))};
+});
+
+const hex = h=>[1,3,5].map(i=>parseInt(h.slice(i,i+2),16));
+const mix = (a,b,t)=>a.map((v,i)=>Math.round(v+(b[i]-v)*t));
+const clamp=(v,a=0,b=1)=>Math.min(b,Math.max(a,v||0));
+
+
+/* category pills — jump to the first slide of a category; active follows the current slide */
+const CATS=[['Juices','juices'],['Coffee & Matcha','cm'],['Protein','protein'],['Tea','tea'],['Lemonades','lemonades'],['Energy','energy']];
+const WAVE='<svg class="wave" viewBox="0 0 200 9" preserveAspectRatio="none" aria-hidden="true"><path d="M0 4.5Q25 0 50 4.5T100 4.5T150 4.5T200 4.5V9H0Z"/></svg>';
+const pillEls = CATS.map(([label,grp])=>{
+  const b=document.createElement('button'); b.className='pill'; b.dataset.grp=grp; b.setAttribute('role','tab');
+  b.innerHTML=`<span class="lbl">${label}</span><span class="fill">${WAVE}<span class="body"><span class="lbl2">${label}</span></span></span>`;
+  const idx=SLIDES.findIndex(x=>x.grp===grp);
+  if(idx<0){ b.classList.add('off'); b.title='Not in this demo yet'; } else b.onclick=()=>go(idx);
+  document.getElementById('pills').appendChild(b); return b;
+});
+
+
+/* category meter */
+const BOTTLE='M5 1h4v3H5zM5.4 4v3C3.6 8 2.5 9 2.5 11v16.2c0 1.5 1.1 2.6 2.6 2.6h3.8c1.5 0 2.6-1.1 2.6-2.6V11c0-2-1.1-3-2.9-4V4';
+const meter=document.getElementById('meter'); let meterGrp=null, meterBts=[], meterLab=null;
+function buildMeter(grp){
+  meter.innerHTML=''; meterBts=[]; meterGrp=grp;
+  SLIDES.forEach((sl,i)=>{ if(sl.grp!==grp) return;
+    const b=document.createElement('button'); b.className='bt'; b.dataset.i=i; b.setAttribute('aria-label',sl.name);
+    b.innerHTML=`<svg class="liq" viewBox="0 0 14 31" aria-hidden="true"><path d="${BOTTLE}"/></svg><svg class="out" viewBox="0 0 14 31" aria-hidden="true"><path d="${BOTTLE}"/></svg>`;
+    b.onclick=()=>go(i); meter.appendChild(b); meterBts.push(b); });
+  meterLab=document.createElement('span'); meterLab.className='lab'; meter.appendChild(meterLab);
+}
+function updateMeter(i){
+  const grp=SLIDES[i].grp; if(grp!==meterGrp) buildMeter(grp);
+  meterBts.forEach(b=>b.classList.toggle('on',+b.dataset.i===i));
+  const pos=meterBts.findIndex(b=>+b.dataset.i===i)+1;
+  meterLab.textContent=String(pos).padStart(2,'0')+' / '+String(meterBts.length).padStart(2,'0');
+}
+
+
+/* big word: heaviest weight, as wide as the screen allows, vertically centred between the pills and the top of the information block */
+function layoutWords(){
+  const pb = document.getElementById('pills').getBoundingClientRect().bottom;
+  els.forEach(s=>{
+    const w = s.layers.word, sp = w.firstElementChild;
+    w.style.fontSize = '100px';
+    const w100 = sp.offsetWidth || 300;
+    const callsOn = s.layers.calls.offsetParent !== null;
+    const copyTop = Math.min(s.layers.copy.offsetTop, callsOn ? s.layers.calls.offsetTop : 1e9);   // top of the information, left or right
+    const span = Math.max(120, copyTop - pb);
+    const fs = Math.min(.94*innerWidth*100/w100, span*.92/.72, 1.35*parseFloat(getComputedStyle(s.el.querySelector('.scene')).height));
+    const sceneTop = s.el.querySelector('.scene').getBoundingClientRect().top;
+    const centre = pb + span/2;
+    w.style.fontSize = fs+'px';
+    w.style.top = (centre - fs*.5 - sceneTop + fs*.03)+'px';
+  });
+}
+(document.fonts&&document.fonts.ready?document.fonts.ready:Promise.resolve()).then(layoutWords);
+addEventListener('resize',layoutWords); layoutWords();
+
+let target = 0, cur = 0;           // scroll position in slides (float)
+let mx = 0, my = 0, tx = 0, ty = 0; // pointer (-1..1), target + smoothed
+
+function go(i){ scrollTo({top: clamp(i,0,N-1)*innerHeight, behavior: reduce?'auto':'smooth'}); }
+prev.onclick=()=>go(Math.round(cur)-1); next.onclick=()=>go(Math.round(cur)+1);
+addEventListener('keydown',e=>{ if(e.key.startsWith('Arrow')){ document.body.classList.add('kb'); if(document.activeElement&&document.activeElement.classList&&document.activeElement.classList.contains('pill')) document.activeElement.blur(); } if(e.key==='ArrowRight'||e.key==='ArrowDown'){ if(e.key==='ArrowRight'){e.preventDefault();go(Math.round(cur)+1);} } if(e.key==='ArrowLeft'){e.preventDefault();go(Math.round(cur)-1);} });
+const sync=()=>{ target = innerHeight? scrollY/innerHeight : 0; };
+addEventListener('scroll',sync,{passive:true}); addEventListener('resize',sync);
+addEventListener('pointermove',e=>{ document.body.classList.remove('kb'); if(e.pointerType!=='mouse')return; tx=(e.clientX/innerWidth-.5)*2; ty=(e.clientY/innerHeight-.5)*2; },{passive:true});
+sync();
+
+function frame(){
+  if(!isFinite(cur)) cur = 0;
+  cur += (target-cur)*(reduce?1:.12);           // smooth the scroll so layers glide
+  mx += (tx-mx)*.08; my += (ty-my)*.08;
+  const i0 = clamp(Math.floor(cur),0,N-1), i1 = clamp(i0+1,0,N-1), f = clamp(cur-i0);
+  stage.style.setProperty('--bg', `rgb(${mix(hex(SLIDES[i0].bg),hex(SLIDES[i1].bg),f)})`);
+  const tc = f>.5?SLIDES[i1].tc:SLIDES[i0].tc; stage.style.setProperty('--tc', tc); stage.style.setProperty('--ti', tc==='#fff'?'#1a1a17':'#fff');
+  const bh = parseFloat(getComputedStyle(els[0].el.querySelector('.scene')).height);
+  els.forEach((s,i)=>{
+    const t = cur - i;                           // -1 .. 0 .. 1 : 0 = this slide is centered
+    const a = Math.abs(t)<1 ? 1 : 0;          // slide (arch + bottle) crossfade
+    const k = clamp(1-Math.abs(t)*1.7);          // word + copy fade faster so text never stacks
+    s.el.style.opacity = a; s.el.classList.toggle('on', a>.5);
+    if(a<=0.001) return;
+    if(reduce){ return; }
+    const sx = 1;                                // scroll direction factor
+    // depth speeds (px at ±1 slide) — back layers slow, front layers fast
+    const word   = `translate3d(${mx*bh*.02}px, ${my*bh*.01}px, 0) scale(${1+Math.abs(t)*1.5})`;   // pure center scale
+    const bottle = `translate3d(${(-mx*bh*.03)}px, ${(t*innerHeight*1.0) + (-my*bh*.02)}px, 0)`;
+    const shadow = bottle;                       // locked to the bottle
+    const text   = `translate3d(0, ${t*36}px, 0)`;
+    s.layers.word.style.transform = word;
+    s.layers.bottle.style.transform = bottle;
+    s.layers.shadow.style.transform = shadow;
+    s.layers.word.style.opacity = k; s.layers.word.firstElementChild.style.backgroundPosition = `${50 + mx*7}% ${50 - t*55 + my*5}%`; s.layers.copy.style.opacity = k; s.layers.eyebrow.style.opacity = k; s.layers.counter.style.opacity = k; s.layers.calls.style.opacity = k;
+    s.layers.copy.style.transform = text; s.layers.calls.style.transform = text;
+  });
+  const g=SLIDES[clamp(Math.round(cur),0,N-1)].grp; pillEls.forEach(p=>{ const on=p.dataset.grp===g; if(on&&!p.classList.contains('on')){ p.classList.add('pulse'); clearTimeout(p._t); p._t=setTimeout(()=>p.classList.remove('pulse'),1000); } p.classList.toggle('on',on); });
+  updateMeter(clamp(Math.round(cur),0,N-1));
+  [...dots.children].forEach((d,i)=>d.classList.toggle('on', i===Math.round(cur)));
+  hint.style.opacity = cur<.1 ? 1 : 0;
+  requestAnimationFrame(frame);
+}
+frame();
+</script>
+</body>
+</html>
